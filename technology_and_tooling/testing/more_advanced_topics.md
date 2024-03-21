@@ -38,7 +38,7 @@ It is worth taking time to think about how your code will be structured, not onl
 
 In one software development methodology, Test-Driven Development (TDD), tests are actually written before the code which ensures that the design for testability is in mind from the onset. TDD typically involves a process of adding one test at time. This newest test will initially fail since the functionality has not yet been implemented. The code is then written that allows this test to pass and the process is repeated, ensuring that requirements are thought about before writing the code.   
 
-Another technique which can lead to more testable code is to use pure functions that have no side effects, this is because the outputs depend on the inputs alone. It can be ensured that the results are deterministic in this case since side-effects have been ruled-out. For more information, see the [functional programming paradigm](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/functional), pages in our training material.
+Another technique which can lead to more testable code is to use pure functions that have no side effects, this is because the outputs depend on the inputs alone. In this case, it can be ensured that the results are deterministic. For more information, see the [functional programming paradigm](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/functional), pages in our training material.
 
 Another way to reduce the degree of coupling between a function being tested by a unit test and any dependencies, is to use *dependency injection*. This involves passing an object or function to our code rather than creating such objects internally. For example, 
 
@@ -47,7 +47,16 @@ TODO: Insert example here showing how to make an example more testable - example
 For example if we were to modify a data structure, such as a dictionary in our function, we need to ensure that the structure is correct both before and after testing if using a function with side-effects. A pure function, that creates a new dictionary, only needs the output tested.
 
 ~~~python
-def create_rolling_average(data):
+# Original code: Function that performs a database query
+import sqlite3
+
+def query_database(sql):
+    conn = sqlite3.connect('example.db')
+    cursor = conn.cursor()
+    cursor.execute(sql)
+    result = cursor.fetchall()
+    conn.close()
+    return result
 
 ~~~
 
