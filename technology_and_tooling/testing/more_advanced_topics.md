@@ -40,11 +40,7 @@ In one software development methodology, Test-Driven Development (TDD), tests ar
 
 Another technique which can lead to more testable code is to use pure functions that have no side effects, this is because the outputs depend on the inputs alone. In this case, it can be ensured that the results are deterministic. For more information, see the [functional programming paradigm](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/functional), pages in our training material.
 
-Another way to reduce the degree of coupling between a function being tested by a unit test and any dependencies, is to use *dependency injection*. This involves passing an object or function to our code rather than creating such objects internally. For example, 
-
-TODO: Insert example here showing how to make an example more testable - example with side effects -> pure functions? dependency injection?
-
-For example if we were to modify a data structure, such as a dictionary in our function, we need to ensure that the structure is correct both before and after testing if using a function with side-effects. A pure function, that creates a new dictionary, only needs the output tested.
+A way to reduce the degree of coupling between a function being tested by a unit test and any dependencies, is to use *dependency injection*. This involves passing an object or function to our code rather than creating such objects internally. In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. It is going to be difficult to test this function without connecting to the `example.db` database.
 
 ~~~python
 # Original code: Function that performs a database query
@@ -60,36 +56,124 @@ def query_database(sql):
 
 ~~~
 
+If we refactor the function to inject the database connection dependency, we can easily replace that connection during testing with one that is connected to a test database. Alternatively we could replace it with a fake (*mocked*) object that represents the connection, meaning that we do not have to connect to an actual database at all in order to test the function. Information on mocking will be given later in this lesson.
+
+~~~python
+# Rewritten code: Performs a database query with dependency injection
+import sqlite3
+
+def connect_to_database(filename):
+  return sqlite3.connect(filename)
+
+def query_database(sql, connection=None):
+    if connection is None:
+        raise TypeError("No database connection given.")
+    cursor = connection.cursor()
+    cursor.execute(sql)
+    result = cursor.fetchall()
+    connection.close()
+    return result
+~~~
+
+Here is an example of some tests for these functions. If you would like to learn more about the Structured Query Language (SQL) expressions used to interact with the database see the [SQL Zoo](https://sqlzoo.net/wiki/SQL_Tutorial) site:
+
+~~~python
+import pytest
+import sqlite3
+from pathlib import Path
+from sqlite_example import connect_to_database, query_database
+
+def test_connect_to_db_type():
+    """
+    Test that connect_to_db function returns sqlite3.Connection
+    """
+    conn = connect_to_database('test.db')
+    assert isinstance(conn, sqlite3.Connection)
+    conn.close()
+
+def test_connect_to_db_name():
+    """
+    Test that connect_to_db function connects to correct DB file
+    """
+    conn = connect_to_database('test.db')
+    cur = conn.cursor()
+    # List current databases https://www.sqlite.org/pragma.html#pragma_database_list
+    cur.execute('PRAGMA database_list;')
+    # Unpack the three parameters returned 
+    db_index, db_type, db_filepath = cur.fetchone()
+    # Extract just the filename from the full filepath
+    db_filename = Path(db_filepath).name 
+    assert db_filename == 'test.db'
+    conn.close()
+
+def test_query_database():
+    """
+    Test that query_database retrieves the correct data
+    """
+    # if the database already exists, delete it
+    if Path("test.db").exists():
+        Path.unlink("test.db")
+    # Create a new test database and enter some data
+    conn = sqlite3.connect("test.db")
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE Animals(Name, Species, Age)")
+    cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
+    # Use query_database to retrieve data
+    sql = "SELECT * FROM Animals"
+    result = query_database(sql, connection=conn)
+    # Result returned is a list (cursor.fetchall)
+    assert isinstance(result, list)
+    # There should just be one record
+    assert len(result) == 1
+    # That record should be the data we added
+    assert result[0] == ("Bugs", "Rabbit", 6)
+
+~~~
+
+As you can see, we can test the `connect_to_database` and `query_database` functions separately. The tests are becoming complex, however, especially the one for `query_database`. Next we can look at how fixtures can help us to reduce this complexity, especially when we want to reuse resources such as a test database.
 
 ## Fixtures
 
 When writing your tests, you will often find that different tests benefit from the same or similar setup of objects, variables or even connections to allow creation of certain scenarios. After testing, there may also be *teardown* functions or procedures that need to be run in order to clean up files that have be generated or to close database connections that have been opened. This is where fixtures come to the rescue. 
 
-Fixtures are created by using the `@pytest.fixture` decorator on a function and the function name of the fixture can then can be passed to your test functions as an argument. If there is a cleanup part to the code, then the fixture function should be written using the `yield` statement rather than a `return` statement. Anything up to the `yield` statement is setup code, and anything after the statement will be run post-testing in order to clean up.
+Fixtures are created by using the `@pytest.fixture` decorator on a function which allows this function to be passed an argument to your tests and used within them. If there is a cleanup part to the code, then the fixture function should be written using the `yield` statement rather than a `return` statement. Anything up to the `yield` statement is setup code, and anything after the statement will be run post-testing in order to clean up.
+
+In the example below, we can use a fixture named `setup_database` to create our test database, add data and also remove the database file once the tests have finished running. As a result, our `test_query_database` function can be simplified and if we want to use the test database in an other tests, we simply need to add `setup_database` as an argument to those tests.
 
 ~~~python
 import pytest
+import sqlite3
+from pathlib import Path
+from sqlite_example import connect_to_database, query_database
 
 @pytest.fixture
 def setup_database():
     # Setup database connection
-    db = connect_to_database()
-    yield db  # Provide the fixture value
+    conn = sqlite3.connect("test.db")
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE Animals(Name, Species, Age)")
+    cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
+    yield conn  # Provide the fixture value
     # Teardown database connection
-    db.disconnect()
+    conn.close()
+    Path.unlink("test.db")
 
-def test_database_operation(setup_database):
-    # Test logic using the fixture
-    db = setup_database
-    assert db.query("SELECT * FROM table") == expected_result
+def test_query_database(setup_database):
+    conn = setup_database
+    sql = "SELECT * FROM Animals"
+    result = query_database(sql, connection=conn)
+    # Result returned is a list (cursor.fetchall)
+    assert isinstance(result, list)
+    # There should just be one record
+    assert len(result) == 1
+    # That record should be the data we added
+    assert result[0] == ("Bugs", "Rabbit", 6)
+
 ~~~
 
-TODO: Give examples of using fixture scope and parametrising fixtures
+By default, any fixtures created will be created when first requested by a test and will be destroyed at the end of the test. We can change this behaviour by defining the *scope* of the fixture. If we we to use the decorator `@pytest.fixture(scope="session")` for example, the fixture will only be destroyed at the end of the entire test session. Modifying this behaviour is especially useful if the fixture is computationally expensive to create (such as a large file) and we do not need to recreate it for each test. 
 
-Fixtures can be scoped to different part of the code
-There are also predefined fixtures e.g. Paths and directories
-
-Give example of using a temp dir
+As well as writing our own fixtures, there are some [predefined/(built-in) ](https://docs.pytest.org/en/latest/reference/fixtures.html). For example we may want to create a temporary directory to use for our files during testing rather than creating files in the directory that we are working from, which is what currently happens when we run our database tests. 
 
 ## Mocking
 
