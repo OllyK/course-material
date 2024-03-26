@@ -4,13 +4,7 @@ id: more_advanced_topics
 dependsOn: [
   technology_and_tooling.testing.diagnosing_issues
 ]
-tags: [pytest]
-attribution: 
-    - citation: >
-        "Aleksandra Nenadic, Steve Crouch, James Graham, et al. (2022). carpentries-incubator/python-intermediate-development: beta (beta). Zenodo. https://doi.org/10.5281/zenodo.6532057"
-      url: https://doi.org/10.5281/zenodo.6532057
-      image: https://carpentries-incubator.github.io/python-intermediate-development/assets/img/incubator-logo-blue.svg
-      license: CC-BY-4.0
+tags: [pytest, fixtures, mocking]
 ---
 
 ## Introduction
@@ -40,7 +34,7 @@ In one software development methodology, Test-Driven Development (TDD), tests ar
 
 Another technique which can lead to more testable code is to use pure functions that have no side effects, this is because the outputs depend on the inputs alone. In this case, it can be ensured that the results are deterministic. For more information, see the [functional programming paradigm](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/functional), pages in our training material.
 
-A way to reduce the degree of coupling between a function being tested by a unit test and any dependencies, is to use *dependency injection*. This involves passing an object or function to our code rather than creating such objects internally. In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. It is going to be difficult to test this function without connecting to the `example.db` database.
+A way to reduce the degree of coupling between a function being tested by a unit test and any dependencies, is to use *dependency injection*. This involves passing an object or function to our code rather than creating such objects internally. In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. It is going to be difficult to test this function without connecting to the `example.db` database. The contents of our file, named `sqlite_example.py` are shown here:
 
 ~~~python
 # Original code: Function that performs a database query
@@ -75,7 +69,7 @@ def query_database(sql, connection=None):
     return result
 ~~~
 
-Here is an example of some tests for these functions. If you would like to learn more about the Structured Query Language (SQL) expressions used to interact with the database see the [SQL Zoo](https://sqlzoo.net/wiki/SQL_Tutorial) site:
+Here is an example of some tests for these functions, these can be created in a new file named `test_sqlite.py` within a `/tests` directory. If you would like to learn more about the Structured Query Language (SQL) expressions in this example that are used to interact with the database see the [SQL Zoo](https://sqlzoo.net/wiki/SQL_Tutorial) site:
 
 ~~~python
 import pytest
@@ -171,9 +165,88 @@ def test_query_database(setup_database):
 
 ~~~
 
-By default, any fixtures created will be created when first requested by a test and will be destroyed at the end of the test. We can change this behaviour by defining the *scope* of the fixture. If we we to use the decorator `@pytest.fixture(scope="session")` for example, the fixture will only be destroyed at the end of the entire test session. Modifying this behaviour is especially useful if the fixture is computationally expensive to create (such as a large file) and we do not need to recreate it for each test. 
+:::callout
+## Discussion Point: Should We Use Multiple `asserts` in One Test Function?
 
-As well as writing our own fixtures, there are some [predefined/(built-in) ](https://docs.pytest.org/en/latest/reference/fixtures.html). For example we may want to create a temporary directory to use for our files during testing rather than creating files in the directory that we are working from, which is what currently happens when we run our database tests. 
+According to the book, The Art of Unit Testing, a unit test by definition should test a *unit of work*, what this means exactly is itself a point for discussion, but generally it means actions that take place between an entry point (e.g. a declaration fo a function) and an exit point (e.g. the output of a function). It is also often said that each test should fail for only one reason alone. 
+
+Does using multiple `assert` statements in one test contravene these guidelines?
+
+Given that, unlike some other testing frameworks, `pytest` will output an error showing which of the `assert` statements in the test failed and why, does this change the situation`?
+:::
+
+By default, any fixtures created will be created when first requested by a test and will be destroyed at the end of the test. We can change this behaviour by defining the *scope* of the fixture. If we we to use the decorator `@pytest.fixture(scope="session")` for example, the fixture will only be destroyed at the end of the entire test session. Modifying this behaviour is especially useful if the fixture is expensive to create (such as a large file) and we do not need to recreate it for each test. 
+
+As well as writing our own fixtures, we can use those that are [predefined/(built-in)](https://docs.pytest.org/en/latest/reference/fixtures.html). For example we may want to use a temporary directory for our files during testing rather than creating files in the directory that we are working from (this is what currently happens when we run our database tests). The built-in fixture `temp_path_factory` allows us to to do this. We can refactor our code to add an extra fixture that uses feature and then it can be used by all the tests that we have written as well as by the `setup_database` fixture. The contents of our `test_sqlite.py` is now:
+
+~~~python
+import pytest
+import sqlite3
+from pathlib import Path
+from sqlite_example import connect_to_database, query_database
+
+
+@pytest.fixture(scope="session")
+def database_fn_fixture(tmp_path_factory):
+    """
+    Uses tmp_path_factory to create a filename in a temp directory
+    """
+    yield tmp_path_factory.mktemp("data") / "test.db"
+
+
+@pytest.fixture(scope="session")
+def setup_database(database_fn_fixture):
+    # Setup database connection
+    conn = sqlite3.connect(database_fn_fixture)
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE Animals(Name, Species, Age)")
+    cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
+    yield conn  # Provide the fixture value
+    # Close database connection and delete file
+    conn.close()
+    Path.unlink(database_fn_fixture)
+
+
+def test_connect_to_db_type(database_fn_fixture):
+    """
+    Test that connect_to_db function returns sqlite3.Connection
+    """
+    conn = connect_to_database(database_fn_fixture)
+    assert isinstance(conn, sqlite3.Connection)
+    conn.close()
+
+
+def test_connect_to_db_name(database_fn_fixture):
+    """
+    Test that connect_to_db function connects to correct DB file
+    """
+    conn = connect_to_database(database_fn_fixture)
+    cur = conn.cursor()
+    # List current databases https://www.sqlite.org/pragma.html#pragma_database_list
+    cur.execute("PRAGMA database_list;")
+    # Unpack the three parameters returned
+    db_index, db_type, db_filepath = cur.fetchone()
+    # Test that the database filename is the same as the one from the fixture
+    assert Path(db_filepath).name == Path(database_fn_fixture).name
+    conn.close()
+
+
+def test_query_database(setup_database):
+    """
+    Test that query_database retrieves the correct data
+    """
+    conn = setup_database
+    sql = "SELECT * FROM Animals"
+    result = query_database(sql, connection=conn)
+    # Result returned is a list (cursor.fetchall)
+    assert isinstance(result, list)
+    # There should just be one record
+    assert len(result) == 1
+    # That record should be the data we added
+    assert result[0] == ("Bugs", "Rabbit", 6)
+
+~~~
+
 
 ## Mocking
 
