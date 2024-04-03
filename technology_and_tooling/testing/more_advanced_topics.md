@@ -14,9 +14,9 @@ Having completed the previous sections of the course, we now know:
 - how to debug problems with our code 
 - how to code in a defensive manner in order to prevent invalid inputs from causing problems.
 
-Up to this point, our examples have focused on unit testing of simple functions that formed part of larger program to analyse inflammation data from patients in a drug trial. As we develop this program further, the complexity of the codebase will increase which, in turn, means a larger number of tests will need to written and organised.  We may also want to integrate the program with other entities that are external to the application itself such as a database, a web-based service or even analysis components that are written in another language such as C++.
+Up to this point, our examples have focused on unit testing of simple functions that formed part of larger program to analyse inflammation data from patients in a drug trial. If we were to develop this program further, a larger number of tests would need to written and organised in order to cater for the increased complexity of the codebase.  In the future, we may also want to integrate our program with other entities that are external to the application itself, such as a database, a web-based service or even analysis components that are written in another language such as C++.
 
-In this section of the course, we will cover these topics:
+In this section of the course, we will cover a number of topics that will help us to deal with testing software that is more complex whilst ensuring that it functions as we would expect:
 
 - Designing testable code
 - Fixtures
@@ -25,6 +25,8 @@ In this section of the course, we will cover these topics:
 - Testing Parallel code
 - Testing GPU code
 - Testing C++ in Python code
+
+We will be moving away from our inflammation analysis example for now and will focus on testing some functions that interact with a database. In the future, having our inflammation data stored in a database may well be useful, however, especially if we add data from further studies or from other sources and would like to link together and structure our data in a more formalised way.
 
 ## Designing testable code
 
@@ -173,6 +175,8 @@ According to the book, The Art of Unit Testing, a unit test by definition should
 Does using multiple `assert` statements in one test contravene these guidelines?
 
 Given that, unlike some other testing frameworks, `pytest` will output an error showing which of the `assert` statements in the test failed and why, does this change the situation`?
+
+Are there any disadvantages to enforcing a rule of one `assert` per test?
 :::
 
 By default, any fixtures created will be created when first requested by a test and will be destroyed at the end of the test. We can change this behaviour by defining the *scope* of the fixture. If we we to use the decorator `@pytest.fixture(scope="session")` for example, the fixture will only be destroyed at the end of the entire test session. Modifying this behaviour is especially useful if the fixture is expensive to create (such as a large file) and we do not need to recreate it for each test. 
@@ -250,7 +254,41 @@ def test_query_database(setup_database):
 
 ## Mocking
 
-Sometimes we may not want to use "real" objects or functions in our tests, such as those that write to a production database, those that read data from external services or simply those parts that take a long time to run. The technique of mocking allows these objects and functions to be replaced with ones that simulate the same behaviour for the purpose of testing. Doing this allows us to create different scenarios whilst isolating the test code and ensuring that the tests are run in an environment that is independent of external factors. 
+Sometimes we may not want to use "real" objects or functions in our tests, such as those that write to a production database, those that read data from external services or simply those parts that take a long time to run. The technique of mocking allows these objects and functions to be replaced with ones that simulate the same behaviour for the purpose of testing. Doing this allows us to create different scenarios whilst isolating the test code and ensuring that the tests are run in an environment that is independent of external factors. Mocking also allows us to check if a specific function is called, how many times it was called and if the arguments passed to the call were correct.
+
+Let us continue with our example where we are testing functions to connect to and query a SQLite database. Instead of actually connecting to the database, we can mock an object to replace it with one that we can control and monitor. We will need to import a library in order to create our mocks. Rather than `pytest`, another library `unittest`, which is the testing library that comes as standard with Python will be used. We can use the `unittest.Mock` class to create a mock object. As a simple example, we can replace our `query_database` function with this `Mock` object. Then we are able to replace the value returned from `query_database` with whatever we want. Here is the contents of a new file `test_mocks.py`. 
+
+~~~python
+import pytest
+import sqlite3
+from pathlib import Path
+from sqlite_example import connect_to_database, query_database
+from unittest.mock import Mock
+
+@pytest.fixture(scope="session")
+def database_fn_fixture(tmp_path_factory):
+    """
+    Uses tmp_path_factory to create a filename in a temp directory
+    """
+    yield tmp_path_factory.mktemp("data") / "test.db"
+
+
+def test_query_database_mock(database_fn_fixture):
+    """Mock the query_database function to show the principle
+    """
+    sql = "SELECT * FROM Animals"
+    conn = connect_to_database(database_fn_fixture)
+    query_database = Mock()
+    query_database.return_value = ("Jerry", "Mouse", 1)
+    assert query_database(sql, connection=conn) == ("Jerry", "Mouse", 1)
+    query_database.assert_called_once_with(sql, connection=conn)
+
+~~~
+
+In the example above, we do not require a database connection, a database file, or to perform any query on a database at all, since we have replaced the entire `query_database` function. The test is not especially useful, however, since we are now simply testing that the `Mock` object returns the value that we asked it to return. Note that we also test that the function was called with the correct arguments (although in this case we could call `query_database` with any arguments we liked since it is actually an `Mock` object)
+
+For a more useful (and interesting) example, we could mock the `sqlite3` connection itself. Then we need to add the cursor that is associated with the connection and add a return value for the `fetchall()` method that we call. In order to do this we will need to use a *context manager* to ensure that we temporarily mock the `sqlite3.connection` object, otherwise this may interfere with other tests that are being run in the same session.
+
 
 TODO: Give examples of using mocking
 - Inbuit mocking library vs pytest-mock
