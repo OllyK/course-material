@@ -134,6 +134,15 @@ def test_query_database():
     # That record should be the data we added
     assert result[0] == ("Bugs", "Rabbit", 6)
 
+def test_query_database_without_connection():
+    """
+    Test the `query_database` function without a provided connection
+    """
+    sql = 'SELECT * FROM Animals'
+    # ensure that we get a TypeError
+    with pytest.raises(TypeError):
+        query_database(sql)
+
 ~~~
 
 As you can see, we can test the `connect_to_database` and `query_database` functions separately. The tests are becoming complex, however, especially the one for `query_database`. Next we can look at how fixtures can help us to reduce this complexity, especially when we want to reuse resources such as a test database.
@@ -154,7 +163,9 @@ from sqlite_example import connect_to_database, query_database
 
 @pytest.fixture
 def setup_database():
-    # Setup database connection
+    """
+    Setup database connection and populate data
+    """
     conn = sqlite3.connect("test.db")
     cur = conn.cursor()
     cur.execute("CREATE TABLE Animals(Name, Species, Age)")
@@ -163,87 +174,6 @@ def setup_database():
     # Teardown database connection
     conn.close()
     Path.unlink("test.db")
-
-def test_query_database(setup_database):
-    conn = setup_database
-    sql = "SELECT * FROM Animals"
-    result = query_database(sql, connection=conn)
-    # Result returned is a list (cursor.fetchall)
-    assert isinstance(result, list)
-    # There should just be one record
-    assert len(result) == 1
-    # That record should be the data we added
-    assert result[0] == ("Bugs", "Rabbit", 6)
-
-~~~
-
-:::callout
-## Discussion Point: Should We Use Multiple `assert` statements in One Test Function?
-
-According to the book, The Art of Unit Testing by Roy Osherove with Vladimir Khorikov, a unit test, by definition, should test a *unit of work*. What this means exactly is itself a point for discussion, but generally it refers to actions that take place between an entry point (e.g. a declaration fo a function) and an exit point (e.g. the output of a function). It is also often said that each test should fail for only one reason alone.
-
-Does using multiple `assert` statements in one test contravene these guidelines?
-
-Given that, unlike some other testing frameworks, `pytest` will output an error showing which of the `assert` statements in the test failed and why, does this change the situation?
-
-Are there any disadvantages to enforcing a rule of one `assert` per test?
-:::
-
-By default, any fixtures created will be created when first requested by a test and will be destroyed at the end of the test. We can change this behaviour by defining the *scope* of the fixture. If we we to use the decorator `@pytest.fixture(scope="session")` for example, the fixture will only be destroyed at the end of the entire test session. Modifying this behaviour is especially useful if the fixture is expensive to create (such as a large file) and we do not need to recreate it for each test. 
-
-As well as writing our own fixtures, we can use those that are [predefined/(built-in)](https://docs.pytest.org/en/latest/reference/fixtures.html). For example we may want to use a temporary directory for our files during testing, rather than creating files in the directory that we are working from (this is what currently happens when we run our database tests). The built-in fixture `temp_path_factory` allows us to to do this. We can refactor our code to add an extra fixture that uses feature and then it can be used by all the tests that we have written as well as by the `setup_database` fixture. The contents of our `test_sqlite.py` is now:
-
-~~~python
-import pytest
-import sqlite3
-from pathlib import Path
-from sqlite_example import connect_to_database, query_database
-
-
-@pytest.fixture(scope="session")
-def database_fn_fixture(tmp_path_factory):
-    """
-    Uses tmp_path_factory to create a filename in a temp directory
-    """
-    yield tmp_path_factory.mktemp("data") / "test.db"
-
-
-@pytest.fixture(scope="session")
-def setup_database(database_fn_fixture):
-    # Setup database connection
-    conn = sqlite3.connect(database_fn_fixture)
-    cur = conn.cursor()
-    cur.execute("CREATE TABLE Animals(Name, Species, Age)")
-    cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
-    yield conn  # Provide the fixture value
-    # Close database connection and delete file
-    conn.close()
-    Path.unlink(database_fn_fixture)
-
-
-def test_connect_to_db_type(database_fn_fixture):
-    """
-    Test that connect_to_db function returns sqlite3.Connection
-    """
-    conn = connect_to_database(database_fn_fixture)
-    assert isinstance(conn, sqlite3.Connection)
-    conn.close()
-
-
-def test_connect_to_db_name(database_fn_fixture):
-    """
-    Test that connect_to_db function connects to correct DB file
-    """
-    conn = connect_to_database(database_fn_fixture)
-    cur = conn.cursor()
-    # List current databases https://www.sqlite.org/pragma.html#pragma_database_list
-    cur.execute("PRAGMA database_list;")
-    # Unpack the three parameters returned
-    db_index, db_type, db_filepath = cur.fetchone()
-    # Test that the database filename is the same as the one from the fixture
-    assert Path(db_filepath).name == Path(database_fn_fixture).name
-    conn.close()
-
 
 def test_query_database(setup_database):
     """
@@ -261,6 +191,156 @@ def test_query_database(setup_database):
 
 ~~~
 
+:::callout
+## Discussion Point: Should We Use Multiple `assert` statements in One Test Function?
+
+According to the book, The Art of Unit Testing by Roy Osherove, a unit test, by definition, should test a *unit of work*. What this means exactly is itself a point for discussion, but generally it refers to actions that take place between an entry point (e.g. a declaration fo a function) and an exit point (e.g. the output of a function). It is also often said that each test should fail for only one reason alone.
+
+Does using multiple `assert` statements in one test contravene these guidelines?
+
+Given that, unlike some other testing frameworks, `pytest` will output an error showing which of the `assert` statements in the test failed and why, does this change the situation?
+
+Are there any disadvantages to enforcing a rule of one `assert` per test?
+:::
+
+::::challenge{id=nested-fixtures title="Fixtures that use fixtures"}
+
+The `setup_database` fixture does several things including initiating the connection as well as creating and populating the database table. In order to separate out these functionalities, split this fixture into two, with one fixture `database_connection` for providing the database connection and another`setup_database` that uses the first fixture and then populates the database. You can view the [pytest fixtures documentation](https://docs.pytest.org/en/7.1.x/how-to/fixtures.html) as a guide.
+
+:::solution
+~~~python
+import pytest
+import sqlite3
+from pathlib import Path
+from sqlite_example import connect_to_database, query_database
+
+@pytest.fixture
+def database_connection():
+    """
+    Create database connection
+    """
+    db_filename = "test.db"
+    conn = sqlite3.connect(db_filename)
+    yield conn
+    conn.close()
+    Path.unlink(db_filename)
+
+@pytest.fixture
+def setup_database(database_connection):
+    """
+    Populate data in database
+    """
+    conn = database_connection
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE Animals(Name, Species, Age)")
+    cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
+    yield conn 
+
+def test_query_database(setup_database):
+    """
+    Test that query_database retrieves the correct data
+    """
+    conn = setup_database
+    sql = "SELECT * FROM Animals"
+    result = query_database(sql, connection=conn)
+    # Result returned is a list (cursor.fetchall)
+    assert isinstance(result, list)
+    # There should just be one record
+    assert len(result) == 1
+    # That record should be the data we added
+    assert result[0] == ("Bugs", "Rabbit", 6)
+~~~
+
+:::
+::::
+
+By default, fixtures will be created when first requested by a test and will be destroyed at the end of the test. We can change this behaviour by defining the *scope* of the fixture. If we want to use the decorator `@pytest.fixture(scope="session")` for example, the fixture will only be destroyed at the end of the entire test session. Modifying this behaviour is especially useful if the fixture is expensive to create (such as a large file) and we do not need to recreate it for each test. 
+
+As well as writing our own fixtures, we can use those that are [predefined/(built-in)](https://docs.pytest.org/en/latest/reference/fixtures.html). For example we may want to use a temporary directory for our files during testing, rather than creating files in the directory that we are working from (this is what currently happens when we run our database tests). The built-in fixture `temp_path_factory` allows us to to do this. We can refactor our code to add an extra fixture that uses feature and then it can be used by all the tests that we have written as well as by the `setup_database` fixture. The contents of our `test_sqlite.py` is now:
+
+~~~python
+import pytest
+import sqlite3
+from pathlib import Path
+from sqlite_example import connect_to_database, query_database
+
+
+@pytest.fixture(scope="session")
+def database_fn_fixture(tmp_path_factory):
+    """
+    Uses tmp_path_factory to create a filename in a temp directory
+    """
+    yield tmp_path_factory.mktemp("data") / "test.db"
+
+@pytest.fixture(scope="session")
+def database_connection(database_fn_fixture):
+    """
+    Create database connection
+    """
+    conn = sqlite3.connect(database_fn_fixture)
+    yield conn
+    conn.close()
+    Path.unlink(database_fn_fixture)
+
+@pytest.fixture(scope="session")
+def setup_database(database_connection):
+    """
+    Populate data in database
+    """
+    conn = database_connection
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE Animals(Name, Species, Age)")
+    cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
+    yield conn 
+
+def test_connect_to_db_type(database_fn_fixture):
+    """
+    Test that connect_to_db function returns sqlite3.Connection
+    """
+    conn = connect_to_database(database_fn_fixture)
+    assert isinstance(conn, sqlite3.Connection)
+    conn.close()
+
+def test_connect_to_db_name(database_fn_fixture):
+    """
+    Test that connect_to_db function connects to correct DB file
+    """
+    conn = connect_to_database(database_fn_fixture)
+    cur = conn.cursor()
+    # List current databases https://www.sqlite.org/pragma.html#pragma_database_list
+    cur.execute("PRAGMA database_list;")
+    # Unpack the three parameters returned
+    db_index, db_type, db_filepath = cur.fetchone()
+    # Test that the database filename is the same as the one from the fixture
+    assert Path(db_filepath).name == Path(database_fn_fixture).name
+    conn.close()
+
+def test_query_database(setup_database):
+    """
+    Test that query_database retrieves the correct data
+    """
+    conn = setup_database
+    sql = "SELECT * FROM Animals"
+    result = query_database(sql, connection=conn)
+    # Result returned is a list (cursor.fetchall)
+    assert isinstance(result, list)
+    # There should just be one record
+    assert len(result) == 1
+    # That record should be the data we added
+    assert result[0] == ("Bugs", "Rabbit", 6)
+
+def test_query_database_without_connection():
+    """
+    Test the `query_database` function without a provided connection
+    """
+    sql = 'SELECT * FROM Animals'
+    # ensure that we get a TypeError
+    with pytest.raises(TypeError):
+        query_database(sql)
+
+~~~
+
+Congratulations, you now know about fixtures. For more details on what you can do please refer to the [pytest fixtures documentation](https://docs.pytest.org/en/7.1.x/how-to/fixtures.html).
 
 ## Mocking
 
@@ -297,7 +377,13 @@ def test_query_database_mock(database_fn_fixture):
 
 ~~~
 
-In the example above, we do not require a database connection, a database file, or to perform any query on a database at all, since we have replaced the entire `query_database` function. The test is not especially useful, however, since we are now simply testing that the `Mock` object returns the value that we asked it to return. Note that we also test that the function was called with the correct arguments (although in this case we could call `query_database` with any arguments we liked since it is actually an `Mock` object)
+In the example above, we do not require a database connection, a database file, or to perform any query on a database at all, since we have replaced the entire `query_database` function. The test is not especially useful, however, since we are now simply testing that the `Mock` object returns the value that we asked it to return. Note that we also test that the function was called with the correct arguments (although in this case we could call `query_database` with any arguments we liked since it is actually an `Mock` object).
+
+:::callout
+## The difference between `Mock` and `MagicMock`
+
+In the examples in this lesson, we will use the `Mock` object from the `unittest` library. When looking elsewhere for information you may find examples that use the `MagicMock` object. The difference between the two is that `MagicMock` objects have default implementations of Python "magic" methods. These are also sometimes referred to as *dunder methods* (double underscore methods), officially however, they are known as [*special methods*](https://docs.python.org/3/reference/datamodel.html#specialnames). Since we will not be relying on any of these methods for our examples, we will stick with the more simple object that does not risk bringing any unexpected behaviour to our mocks.
+:::
 
 For a more useful (and interesting) example, we could mock the `sqlite3` connection itself. Once we have done this, we will also need to add the cursor that is associated with the connection to the mocked connection and add a return value for the `cursor.fetchall()` method that we call. The example below shows how we might do this:
 
@@ -322,12 +408,17 @@ def test_query_db_mocked_connection():
     result = query_database(sql, connection=conn)
     assert result[0] == ("Jerry", "Mouse", 1)
     # check that query_database passes our SQL string to cursor.execute()
-    mock_cursor.execute.assert_called_once_with("SELECT * FROM Animals")
+    mock_cursor.execute.assert_called_once_with(sql)
+    # check that fetchall() was called
+    mock_cursor.fetchall.assert_called_once()
     # check that query_database closes the connection
     conn.close.assert_called_once()
+
 ~~~
 
-If we add the test above to our `test_mocks.py` file and run `python -m pytest tests/test_mocks.py ` we find that the tests pass. If we run this file along with the `test_sqlite.py` fiel that we created earlier, however, we may find that we start to get test failures with errors similar to this:
+#### Patching functions
+
+If we add the test above to our `test_mocks.py` file and run `python -m pytest tests/test_mocks.py ` we find that the tests pass. If we run this file along with the `test_sqlite.py` file that we created earlier, however, we may find that we start to get test failures with errors similar to this:
 
 ~~~bash
  def test_connect_to_db_type(database_fn_fixture):
@@ -383,7 +474,9 @@ def test_query_db_mocked_connection():
         result = query_database(sql, connection=conn)
         assert result[0] == ("Jerry", "Mouse", 1)
         # check that query_database passes our SQL string to cursor.execute()
-        mock_cursor.execute.assert_called_once_with("SELECT * FROM Animals")
+        mock_cursor.execute.assert_called_once_with(sql)
+        # check that fetchall() was called
+        mock_cursor.fetchall.assert_called_once()
         # check that query_database closes the connection
         conn.close.assert_called_once()
 ~~~
@@ -405,7 +498,9 @@ def test_query_db_mocked_connection(mock_connection):
     result = query_database(sql, connection=conn)
     assert result[0] == ("Jerry", "Mouse", 1)
     # check that query_database passes our SQL string to cursor.execute()
-    mock_cursor.execute.assert_called_once_with("SELECT * FROM Animals")
+    mock_cursor.execute.assert_called_once_with(sql)
+    # check that fetchall() was called
+    mock_cursor.fetchall.assert_called_once()
     # check that query_database closes the connection
     conn.close.assert_called_once()
 ~~~
@@ -415,7 +510,9 @@ def test_query_db_mocked_connection(mock_connection):
 
 ### Mocking using other libraries
 
-As an alternative to using the `unitest.mock` library, its possible to use a version of mocking from within `pytest`, termed *monkeypatching*. A built-in [fixture](## Fixtures) called `monkeypatch` allows modifying attributes, functions or classes within the scope of the test function. Some example methods are:
+#### Monkeypatching in pytest
+
+As an alternative to using the `unitest.mock` library, its possible to use a version of mocking from within `pytest`, termed *monkeypatching*. A built-in fixture called `monkeypatch` allows modifying attributes, functions or classes within the scope of the test function. Some example methods are:
 
 - `monkeypatch.setattr()` - used to set an attribute to a new value or replace it with a new function
 - `monkeypatch.delattr()` - used to delete an attribute
@@ -477,11 +574,82 @@ Rewrite `test_query_db_mocked_connection` to use the pytest `monkeypatch` fixtur
 
 :::solution
 ~~~python
-"""ToDo"""
+import pytest
+import sqlite3
+from sqlite_example import query_database
+from unittest.mock import patch, Mock
+
+def test_query_db_mocked_connection(monkeypatch):
+    """Mock the database connection and cursor to ensure the correct methods
+    are called within the query_database function
+    """
+    # Create a mock sqlite3.Connection object
+    mock_conn = Mock()
+
+    # Create a mock sqlite3.Cursor object
+    mock_cursor = Mock()
+    mock_cursor.fetchall.return_value = [("Jerry", "Mouse", 1)]
+    mock_conn.cursor.return_value = mock_cursor
+
+    # Monkeypatch the sqlite3.connect function with a mock
+    def mock_connect(*args, **kwargs):
+        return mock_conn
+
+    monkeypatch.setattr("sqlite3.connect", mock_connect)
+    conn = sqlite3.connect("my_non_existent_file")
+    # Call the function and assert the expected behavior
+    sql = "SELECT * FROM Animals"
+    result = query_database(sql, connection=conn)
+    assert result[0] == ("Jerry", "Mouse", 1)
+    # check that query_database passes our SQL string to cursor.execute()
+    mock_cursor.execute.assert_called_once_with(sql)
+    # check that fetchall() was called
+    mock_cursor.fetchall.assert_called_once()
+    # check that query_database closes the connection
+    conn.close.assert_called_once()
+    
 ~~~
 
 :::
 ::::
+
+#### Using the `mocker` fixture from `pytest-mock`
+
+Another alternative to using the `unitest.mock` library is to install `pytest-mock` alongside `pytest`. This wil give you access to a fixture called `mocker` which provides access to the `unittest.patch` functionalities through this fixture, which means that mocking will automatically be reversed after the test is run. There is no need to `import unittest` and no `monkeypatch` functions are required. Here is how our test would look if we were to use this library:
+
+~~~python
+import pytest
+import sqlite3
+from sqlite_example import query_database
+
+def test_query_db_mocked_connection_mocker(mocker):
+    """Mock the database connection and cursor to ensure the correct methods are called within the query_database function"""
+    # Create a mock sqlite3.Connection object
+    mock_conn = mocker.Mock(spec=sqlite3.Connection)
+
+    # Create a mock sqlite3.Cursor object
+    mock_cursor = mocker.Mock(spec=sqlite3.Cursor)
+    mock_cursor.fetchall.return_value = [("Jerry", "Mouse", 1)]
+    mock_conn.cursor.return_value = mock_cursor
+
+    # Replace the sqlite3.connect function with a mock
+    mocker.patch('sqlite3.connect', return_value=mock_conn)
+
+    conn = sqlite3.connect("my_non_existent_file")
+    # Call the function and assert the expected behavior
+    sql = "SELECT * FROM Animals"
+    result = query_database(sql, connection=conn)
+    assert result[0] == ("Jerry", "Mouse", 1)
+    # check that query_database passes our SQL string to cursor.execute()
+    mock_cursor.execute.assert_called_once_with(sql)
+    # check that fetchall() was called
+    mock_cursor.fetchall.assert_called_once()
+    # check that query_database closes the connection
+    conn.close.assert_called_once()
+    
+~~~
+
+Well done for making it this far, mocking is often a confusing subject due to the many ways in which it can be done and the abstract nature of temporarily replacing parts of the thing you are testing.  After this introduction, you can now solidify your learning by practicing the techniques here on your own code whilst using the documentation as a reference.
 
 ## Testing long-running code
 
