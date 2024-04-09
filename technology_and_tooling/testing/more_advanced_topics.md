@@ -655,11 +655,22 @@ Well done for making it this far, mocking is often a confusing subject due to th
 
 As mentioned in the section on mocking above, long-running processes and functions can be replaced with "faked" objects that return a predefined result instantly, however this bypasses actually testing these long running functions. If we need to check that the long running code itself is working correctly, what are our options?
 
+### Use custom pytest markers
+
+to exclude the long-running tests in the normal development cycle but ensure that the tests are still run on a regular basis or as part of continuous integration pipelines (such as an overnight schedule) this will ensure that these portions of the code do not get overlooked. The hardware that automated testing schedules are run on may also be more performant, thereby reducing the time taken to complete computationally heavy tasks
+
 - Simulate passage of time by using the `time` library and check that that dependencies surrounding the long-running code still function correctly
 - Run smaller tests in parallel to reduce overall execution time in order to compensate for the long running tests
 - Accepting dependencies as parameters will allow easier mocking of long-running processes
 - Use timeouts to ensure long-running tests cannot run indefinitely
-- Use custom Pytest markers to exclude the long-running tests in the normal development cycle but ensure that the tests are still run on a regular basis or as part of continuous integration pipelines (such as an overnight schedule) this will ensure that these portions of the code do not get overlooked. The hardware that automated testing schedules are run on may also be more performant, thereby reducing the time taken to complete computationally heavy tasks
+- Monitor Resource Usage:
+    - Monitor the resource usage (CPU, memory, disk I/O, etc.) of your long-running functions during the tests.
+    - This can help identify performance bottlenecks and ensure that your functions are not consuming excessive resources.
+    - You can use tools like pytest-cov or pytest-benchmark to collect resource usage metrics during the tests.
+- Add logging statements throughout your long-running function to track its progress.
+    - This can help you identify where the function might be getting stuck or taking too long to complete.
+    - You can also add checkpoints in your function to save the current state and resume from that point in case of a failure.
+
 
 ## Testing Parallel code
 
