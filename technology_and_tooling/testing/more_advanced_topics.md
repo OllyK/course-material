@@ -22,21 +22,136 @@ In this section of the course, we will cover a number of topics that will help u
 - Fixtures
 - Mocking
 
-We will be moving away from our inflammation analysis example for now and will focus on testing some functions that interact with a database. In the future, having our inflammation data stored in a database may well be useful, however, especially if we add data from further studies or from other sources and would like to link together and structure our data in a more formalised way.
 
 ## Designing testable code
 
-It is worth taking time to think about how your code will be structured, not only for readability that will allow others (and perhaps yourself, when viewing it several months later!) to understand what the code does and how it does it, but also to make testing more straightforward. Increasing the ease of writing tests can result in increased test coverage, and thereby reduce the chance that future changes made to the codebase will introduce regressions. In fact, writing testable code often also results in a cleaner and more modular structure that adheres to best practices.
+We will be developing our inflammation analysis software into a different, object-orientated structure. This will allow us to add flexibility to the program as well as increasing the testability. Ideally we would like our functions that analyse the data to be agnostic to the way that data is stored and loaded. For example having our inflammation data stored in a database rather then CSV files may well be useful, especially if we add data from further studies or from other sources and would like to link together and structure our data in a more formalised way. We should not have to rewrite our tests for the analysis functions to reflect this change.
+
+Increasing the ease of writing tests can result in increased test coverage, and thereby reduce the chance that future changes made to the codebase will introduce regressions. In fact, writing testable code often also results in a cleaner and more modular structure that adheres to best practices. Here are some things to think about when writing your software that will make it more testable:
+
+### Separation of concerns
+
+It is good practice to organise code into modular function or classes that each have a single, well-defined responsibility. By doing this, not only will it be more readable, but also it will be more straightforward to isolate and test individual components of your system. So, when converting our inflammation project into an object-orientated version, let's start by creating classes to represent the different types of data in our study. This was already investigated in the [object-orientated programming](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/object_orientated) part of the course, where we created different subclasses of the `Person` class and added them to a `Trial` object. We use similar concepts, but will doing things slightly differently here.
+
+We would ideally like to have models that represent individual patients and their associated data. In this case we can use a handy concept of [Data Classes](https://docs.python.org/3/library/dataclasses.html) (available since Python 3.7). These classes come with pre-configured features such  as magic methods that allow easy comparison and string representation of the objects.
+
+::::challenge{id=data-classes title="Creating a `Patient` data class."}
+
+ Write a data class `Patient` that represents a patient using the `@dataclass` decorator. For now, the only attributes a `Patient` has is an `id` and a list of numbers containing their inflammation scores (flare-ups per day) as recorded in a row of one of the CSV files. You may need to lookup more information on type hints in Python, here is some information on [PEP484](https://peps.python.org/pep-0484/) where these hints were proposed. We would also like to add some useful methods to the `Patient` class that will return the mean, max and min of the data for that patient. Call these `data_mean`, `data_max` and `data_min`.
+
+:::solution
+~~~python
+from dataclasses import dataclass
+import numpy as np
+
+@dataclass
+class Patient:
+    id: int # Note how this differs to defining attributes in __init__()
+    data: list[int]
+
+def data_mean(self):
+    """Calculate the mean of patient's inflammation data."""
+    return np.mean(self.data)
+
+def data_max(self):
+    """Calculate the max of patient's inflammation data."""
+    return np.max(self.data)
+
+def data_min(self):
+    """Calculate the min of patient's inflammation data."""
+    return np.min(self.data)
+
+~~~
+
+:::
+::::
+
+Now we have a class that represents a patient in the study, we can also create a class representing a trial (each of the 12 CSV files represents a separate trial). A trial has an `id` of its own and `data` a 2D numpy array from one CSV file (note, this is different to how we set up the `Trial` object in the object-orientated programming section).
+
+::::challenge{id=data-classes title="Creating a `Trial` data class."}
+
+ Write a class `Trial` that represents a trial. For now, the only attributes a `Trial` has are an `id` and `data` a 2D numpy array with the data from one CSV file. The data from the CSV needs to read in by calling a method `load_csv` which can be called from the class constructor (`__init__()`). You can also add all the functions from our `models.py` file to this class: `daily_mean` and `daily_max`, `daily_min` and `patient_normalise`, they will need to be modified slightly to work as methods of the `Trial` class.
+
+:::solution
+~~~python
+class Trial:
+    def __init__(self, filename, id):
+        self.data = self.load_csv(filename)
+        self.id = id
+
+    def load_csv(self, filename):
+        """Load a Numpy array from a CSV
+
+        :param filename: Filename of CSV to load
+        """
+        return np.loadtxt(fname=filename, delimiter=',')
+
+    def daily_mean(self):
+        """Calculate the daily mean of a 2d inflammation data array."""
+        return np.mean(self.data, axis=0)
+
+    def daily_max(self):
+        """Calculate the daily max of a 2d inflammation data array."""
+        return np.max(self.data, axis=0)
+
+    def daily_min(self):
+        """Calculate the daily min of a 2d inflammation data array."""
+        return np.min(self.data, axis=0)
+
+    def patient_normalise(self):
+        """
+        Normalise patient data from a 2D inflammation data array.
+
+        NaN values are ignored, and normalised to 0.
+
+        Negative values are rounded to 0.
+        """
+        if np.any(self.data < 0):
+            raise ValueError('Inflammation values should not be negative')
+        if not isinstance(self.data, np.ndarray):
+            raise TypeError('data input should be ndarray')
+        if len(self.data.shape) != 2:
+            raise ValueError('inflammation array should be 2-dimensional')
+        max_data = np.nanmax(self.data, axis=1)
+        with np.errstate(invalid='ignore', divide='ignore'):
+            normalised = self.data / max_data[:, np.newaxis]
+        normalised[np.isnan(normalised)] = 0
+        normalised[normalised < 0] = 0
+        return normalised
+
+~~~
+
+:::
+::::
+
+Now we can create `Trial` objects, with associated `data` attributes, but how can we create `Patient` objects? We could do that directly by creating them in the standard way:
+
+~~~python
+filename = "inflammation-01.csv"
+data = np.loadtxt(fname=filename, delimiter=',')
+row = data[0, :] # The first row of the data
+patient_0 = Patient(0, row) # Create a Patient with id 0
+
+~~~
+
+Alternatively we could 
+
+
+we should adjust our existing tests from the previous lesson in order to fit with these changes.
 
 ### Test-driven development
 
 In one software development methodology, Test-Driven Development (TDD), tests are actually written before the code which ensures that the design for testability is in mind from the onset. TDD typically involves a process of adding one test at time. This newest test will initially fail since the functionality has not yet been implemented. The code is then written that allows this test to pass and the process is repeated, ensuring that requirements are thought about before diving in and starting to implement algorithms.
 
+### Avoid duplication
+
+Extract common functionality into reusable functions and classes that can be tested thoroughly in isolation. This will also help to reduce the complexity of your code.
+
 ### Programming paradigms
 
-Another technique, which can lead to more testable software, is to use pure functions that have no side effects, this is because the outputs depend on the inputs alone. In this case, it can be ensured that the results are deterministic. For more information, see the [functional programming paradigm](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/functional), pages in our training material.
+Another technique, which can result in more testable software, is to use pure functions that have no side effects, this is because the outputs depend on the inputs alone. In this case, it can be ensured that the results are deterministic. For more information, see the [functional programming paradigm](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/functional), pages in our training material.
 
-### Dependency injection
+### Minimise dependencies using dependency injection
 
 A way to reduce the degree of coupling between a function being tested by a unit test and any dependencies, is to use *dependency injection*. This involves passing an object or function to our routines rather than creating such objects internally. In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. It is going to be difficult to test this function without connecting to the `example.db` database. The contents of our file, named `sqlite_example.py` are shown here:
 
