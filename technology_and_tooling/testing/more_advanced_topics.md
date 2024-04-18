@@ -27,50 +27,70 @@ In this section of the course, we will cover a number of topics that will help u
 
 We will be developing our inflammation analysis software into a different, object-orientated structure. This will allow us to add flexibility to the program as well as increasing the testability. Ideally we would like our functions that analyse the data to be agnostic to the way that data is stored and loaded. For example having our inflammation data stored in a database rather then CSV files may well be useful, especially if we add data from further studies or from other sources and would like to link together and structure our data in a more formalised way. We should not have to rewrite our tests for the analysis functions to reflect this change.
 
-Increasing the ease of writing tests can result in increased test coverage, and thereby reduce the chance that future changes made to the codebase will introduce regressions. In fact, writing testable code often also results in a cleaner and more modular structure that adheres to best practices. Here are some things to think about when writing your software that will make it more testable:
+Increasing the ease of writing tests can result in increased test coverage, and thereby reduce the chance that future changes made to the codebase will introduce regressions. In fact, writing testable code often also results in a cleaner and more modular structure that adheres to best practices. Before we dive into refactoring our code and our tests, here is a summary of some things to think about when writing your software that will make it more testable:
 
 ### Separation of concerns
 
-It is good practice to organise code into modular function or classes that each have a single, well-defined responsibility. By doing this, not only will it be more readable, but also it will be more straightforward to isolate and test individual components of your system. So, when converting our inflammation project into an object-orientated version, let's start by creating classes to represent the different types of data in our study. This was already investigated in the [object-orientated programming](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/object_orientated) part of the course, where we created different subclasses of the `Person` class and added them to a `Trial` object. We use similar concepts, but will doing things slightly differently here.
+It is good practice to organise code into modular function or classes that each have a single, well-defined responsibility. By doing this, not only will it be more readable, but also it will be more straightforward to isolate and test individual components of your system. 
 
-We would ideally like to have models that represent individual patients and their associated data. In this case we can use a handy concept of [Data Classes](https://docs.python.org/3/library/dataclasses.html) (available since Python 3.7). These classes come with pre-configured features such  as magic methods that allow easy comparison and string representation of the objects.
+### Avoid duplication
+
+Extract common functionality into reusable functions and classes that can be tested thoroughly in isolation. This will also help to reduce the complexity of your code.
+
+### Programming paradigms
+
+Another technique, which can result in more testable software, is to use pure functions that have no side effects, this is because the outputs depend on the inputs alone. In this case, it can be ensured that the results are deterministic. For more information, see the [functional programming paradigm](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/functional), pages in our training material.
+
+### Test-driven development
+
+Improving the testability of your code can also be achieved by creating tests before actually writing the classes and functions. This software development methodology is called Test-Driven Development (TDD). TDD ensures that the design for testability is in mind from the onset and typically involves a process of adding one test at time. This newest test will initially fail since the functionality has not yet been implemented. The code is then written that allows this test to pass and the process is repeated, ensuring that requirements are thought about before diving in and starting to implement algorithms.
+
+### Minimise dependencies using dependency injection
+
+A way to reduce the degree of coupling between a function being tested by a unit test and any dependencies, is to use *dependency injection*. This involves passing an object or function to our routines rather than creating such objects internally. 
+
+
+## Refactoring our code and our tests
+Firstly, we are going to change our procedural inflammation project into an object-orientated version, let's start by creating classes to represent the different types of data in our study. This was already investigated in the [object-orientated programming](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/object_orientated) part of the course, where we created different subclasses of the `Person` class and added them to a `Trial` object. We use similar concepts, but will doing things slightly differently here.
+
+We would ideally like to have models that represent individual patients and their associated data. It is going to be up to you to write them!
 
 ::::challenge{id=data-classes title="Creating a `Patient` data class."}
 
- Write a data class `Patient` that represents a patient using the `@dataclass` decorator. For now, the only attributes a `Patient` has is an `id` and a list of numbers containing their inflammation scores (flare-ups per day) as recorded in a row of one of the CSV files. You may need to lookup more information on type hints in Python, here is some information on [PEP484](https://peps.python.org/pep-0484/) where these hints were proposed. We would also like to add some useful methods to the `Patient` class that will return the mean, max and min of the data for that patient. Call these `data_mean`, `data_max` and `data_min`.
+ Write a class `Patient`. For now, the only attributes a `Patient` has is an `id` and a list of numbers containing their inflammation scores (flare-ups per day) as recorded in a row of one of the CSV files. We would also like to add some useful methods to the `Patient` class that will return the mean, max and min of the data for that patient. Call these `data_mean`, `data_max` and `data_min`.
 
 :::solution
 ~~~python
 from dataclasses import dataclass
 import numpy as np
 
-@dataclass
 class Patient:
-    id: int # Note how this differs to defining attributes in __init__()
-    data: list[int]
+    def __init__(self, id, data):
+        self.id = id
+        self.data = data
 
-def data_mean(self):
-    """Calculate the mean of patient's inflammation data."""
-    return np.mean(self.data)
+    def data_mean(self):
+        """Calculate the mean of patient's inflammation data."""
+        return np.mean(self.data)
 
-def data_max(self):
-    """Calculate the max of patient's inflammation data."""
-    return np.max(self.data)
+    def data_max(self):
+        """Calculate the max of patient's inflammation data."""
+        return np.max(self.data)
 
-def data_min(self):
-    """Calculate the min of patient's inflammation data."""
-    return np.min(self.data)
+    def data_min(self):
+        """Calculate the min of patient's inflammation data."""
+        return np.min(self.data)
 
 ~~~
 
 :::
 ::::
 
-Now we have a class that represents a patient in the study, we can also create a class representing a trial (each of the 12 CSV files represents a separate trial). A trial has an `id` of its own and `data` a 2D numpy array from one CSV file (note, this is different to how we set up the `Trial` object in the object-orientated programming section).
+Now we have a class that represents a patient in the study, we can also create a class representing a trial (each of the 12 CSV files represents a separate trial). A trial has an `id` of its own and the attribute `data`, which holds a 2D numpy array from one CSV file (note, this is different to how we set up the `Trial` object in the object-orientated programming section).
 
 ::::challenge{id=data-classes title="Creating a `Trial` data class."}
 
- Write a class `Trial` that represents a trial. For now, the only attributes a `Trial` has are an `id` and `data` a 2D numpy array with the data from one CSV file. The data from the CSV needs to read in by calling a method `load_csv` which can be called from the class constructor (`__init__()`). You can also add all the functions from our `models.py` file to this class: `daily_mean` and `daily_max`, `daily_min` and `patient_normalise`, they will need to be modified slightly to work as methods of the `Trial` class.
+ Write a class `Trial` that represents a trial. For now, the only attributes a `Trial` has are an `id` and `data`, which is a 2D numpy array with the data from one CSV file. The data from the CSV should be read in by calling a method `load_csv` which can be called from the class constructor (`__init__`). You can also add all the functions from our `models.py` file to this class: `daily_mean` and `daily_max`, `daily_min` and `patient_normalise`, they will need to be modified slightly to work as methods of the `Trial` class.
 
 :::solution
 ~~~python
@@ -124,36 +144,91 @@ class Trial:
 :::
 ::::
 
-Now we can create `Trial` objects, with associated `data` attributes, but how can we create `Patient` objects? We could do that directly by creating them in the standard way:
+Now we can create `Trial` objects, with associated `data` attributes, but how can we create `Patient` objects? We could do that by creating them in the standard way:
 
 ~~~python
 filename = "inflammation-01.csv"
 data = np.loadtxt(fname=filename, delimiter=',')
-row = data[0, :] # The first row of the data
+row = data[0, :] # The first row of the 2D data array
 patient_0 = Patient(0, row) # Create a Patient with id 0
 
 ~~~
 
-Alternatively we could 
+Alternatively we could create a `Person` using a method in the `Trial` class, since all the required data is already there:
+
+~~~python
+class Trial:
+    def __init__(self, filename, id):
+        self.data = self.load_csv(filename)
+        self.id = id
+
+    def get_patient(self, row):
+        """Get a Patient object by data row. The id of the object is the 
+        same as the row number."""
+        return Patient(row, self.data[row, :])
+
+    ...
+
+filename = "inflammation-01.csv"
+trail_group_01 = Trial(filename, "Group01")
+patient_0 = trail_group_01.get_patient(0) # Create a Patient with id 0
+~~~
 
 
-we should adjust our existing tests from the previous lesson in order to fit with these changes.
+We should now adjust our existing tests from the previous lesson in order to fit with these changes. To test the `Patient` class we could write a series of tests like this:
 
-### Test-driven development
+~~~python
+import pytest
+from inflammation.models import Patient
 
-In one software development methodology, Test-Driven Development (TDD), tests are actually written before the code which ensures that the design for testability is in mind from the onset. TDD typically involves a process of adding one test at time. This newest test will initially fail since the functionality has not yet been implemented. The code is then written that allows this test to pass and the process is repeated, ensuring that requirements are thought about before diving in and starting to implement algorithms.
+def test_patient_data_mean():
+    patient = Patient(id=1, data=[1, 2, 3, 4, 5])
+    assert patient.data_mean() == 3.0
 
-### Avoid duplication
+def test_patient_data_max():
+    patient = Patient(id=1, data=[1, 2, 3, 4, 5])
+    assert patient.data_max() == 5
 
-Extract common functionality into reusable functions and classes that can be tested thoroughly in isolation. This will also help to reduce the complexity of your code.
+def test_patient_data_min():
+    patient = Patient(id=1, data=[1, 2, 3, 4, 5])
+    assert patient.data_min() == 1
 
-### Programming paradigms
+def test_patient_attributes():
+    patient = Patient(id=2, data=[10, 20, 30, 40, 50])
+    assert patient.id == 2
+    assert patient.data == [10, 20, 30, 40, 50]
+~~~
 
-Another technique, which can result in more testable software, is to use pure functions that have no side effects, this is because the outputs depend on the inputs alone. In this case, it can be ensured that the results are deterministic. For more information, see the [functional programming paradigm](https://train.oxrse.uk/material/HPCu/software_architecture_and_design/functional), pages in our training material.
+To prevent having to repeat the creation of the `Patient` objects, we could encapsulate these tests in their own class like this:
 
-### Minimise dependencies using dependency injection
+~~~python
+import pytest
+from inflammation.models import Patient
 
-A way to reduce the degree of coupling between a function being tested by a unit test and any dependencies, is to use *dependency injection*. This involves passing an object or function to our routines rather than creating such objects internally. In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. It is going to be difficult to test this function without connecting to the `example.db` database. The contents of our file, named `sqlite_example.py` are shown here:
+class TestPatient:
+    def setup_method(self):
+        self.patient1 = Patient(id=1, data=[1, 2, 3, 4, 5])
+        self.patient2 = Patient(id=2, data=[10, 20, 30, 40, 50])
+
+    def test_patient_data_mean(self):
+        assert self.patient1.data_mean() == 3.0
+
+    def test_patient_data_max(self):
+        assert self.patient1.data_max() == 5
+
+    def test_patient_data_min(self):
+        assert self.patient1.data_min() == 1
+
+    def test_patient_attributes(self):
+        assert self.patient2.id == 2
+        assert self.patient2.data == [10, 20, 30, 40, 50]
+~~~
+
+
+
+### Using a database rather than CSV files
+
+In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. It is going to be difficult to test this function without connecting to the `example.db` database. The contents of our file, named `sqlite_example.py` are shown here:
 
 ~~~python
 # Original code: Function that performs a database query
