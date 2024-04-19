@@ -55,13 +55,12 @@ Firstly, we are going to change our procedural inflammation project into an obje
 
 We would ideally like to have models that represent individual patients and their associated data. It is going to be up to you to write them!
 
-::::challenge{id=data-classes title="Creating a `Patient` data class."}
+::::challenge{id=patient-class title="Creating a `Patient` class."}
 
  Write a class `Patient`. For now, the only attributes a `Patient` has is an `id` and a list of numbers containing their inflammation scores (flare-ups per day) as recorded in a row of one of the CSV files. We would also like to add some useful methods to the `Patient` class that will return the mean, max and min of the data for that patient. Call these `data_mean`, `data_max` and `data_min`.
 
 :::solution
 ~~~python
-from dataclasses import dataclass
 import numpy as np
 
 class Patient:
@@ -88,7 +87,7 @@ class Patient:
 
 Now we have a class that represents a patient in the study, we can also create a class representing a trial (each of the 12 CSV files represents a separate trial). A trial has an `id` of its own and the attribute `data`, which holds a 2D numpy array from one CSV file (note, this is different to how we set up the `Trial` object in the object-orientated programming section).
 
-::::challenge{id=data-classes title="Creating a `Trial` data class."}
+::::challenge{id=trial-class title="Creating a `Trial` class."}
 
  Write a class `Trial` that represents a trial. For now, the only attributes a `Trial` has are an `id` and `data`, which is a 2D numpy array with the data from one CSV file. The data from the CSV should be read in by calling a method `load_csv` which can be called from the class constructor (`__init__`). You can also add all the functions from our `models.py` file to this class: `daily_mean` and `daily_max`, `daily_min` and `patient_normalise`, they will need to be modified slightly to work as methods of the `Trial` class.
 
@@ -99,7 +98,8 @@ class Trial:
         self.data = self.load_csv(filename)
         self.id = id
 
-    def load_csv(self, filename):
+    @staticmethod
+    def load_csv(filename):
         """Load a Numpy array from a CSV
 
         :param filename: Filename of CSV to load
@@ -175,8 +175,13 @@ patient_0 = trail_group_01.get_patient(0) # Create a Patient with id 0
 ~~~
 
 
-We should now adjust our existing tests from the previous lesson in order to fit with these changes. To test the `Patient` class we could write a series of tests like this:
+We should now adjust and extend our existing tests from the previous lesson in order to fit with these changes. 
 
+::::challenge{id=test-patient title="Testing the `Patient` class."}
+
+ Write some tests for the `Patient` class that cover the functions `data_mean`, `data_max` and `data_min` as well as a test that checks that the attributes of the class are created correctly. You do not need to write extensive parametrised tests at this stage, this is more an exercise to practice testing class methods as opposed to standard procedural functions.
+
+:::solution
 ~~~python
 import pytest
 from inflammation.models import Patient
@@ -199,14 +204,17 @@ def test_patient_attributes():
     assert patient.data == [10, 20, 30, 40, 50]
 ~~~
 
-To prevent having to repeat the creation of the `Patient` objects, we could encapsulate these tests in their own class like this:
+:::
+::::
+
+In the exercise above, we found ourselves having to create the same or similar `Patient` objects multiple times. To prevent this repetition, we could encapsulate these tests in their own class like this:
 
 ~~~python
 import pytest
 from inflammation.models import Patient
 
 class TestPatient:
-    def setup_method(self):
+    def setup_class(self):
         self.patient1 = Patient(id=1, data=[1, 2, 3, 4, 5])
         self.patient2 = Patient(id=2, data=[10, 20, 30, 40, 50])
 
@@ -224,11 +232,198 @@ class TestPatient:
         assert self.patient2.data == [10, 20, 30, 40, 50]
 ~~~
 
+Writing tests in this manner helps to organise similar tests into groups and also allows sharing of data between tests. The `pytest` library will run the `setup_class` method before running all of the tests in the class, if you wish to run the setup before each individual test, the `setup_method` method can be used. Similarly, if you want to perform any actions after running the test methods in the class, `teardown_class` and `teardown_method` methods exist. These can be useful for cleaning up, for example if any files were created on your system or an connections were opened. For more information you can [view the documentation here](https://docs.pytest.org/en/latest/how-to/xunit_setup.html).
 
+:::callout
+## Fixtures
+
+As an alternative to encapsulating test methods in a class and using `setup` and `teardown` methods, we can use *fixtures*. Fixtures are defined by using the `@pytest.fixture` decorator on a function. Then this function will become available to be passed as an argument to your tests and used within them. If there is a cleanup part to the code, then the fixture function should be written to include a `yield` statement rather than a `return` statement. Anything up to the `yield` statement is setup code, and anything after the statement will be run post-testing in order to clean up.
+
+Here is how we can write our tests for the `Person` class using fixtures instead of a `setup_class` method:
+
+~~~python
+import pytest
+from inflammation.models import Patient
+
+@pytest.fixture()
+def patient_1():
+    return Patient(id=1, data=[1, 2, 3, 4, 5])
+
+@pytest.fixture()
+def patient_2():
+    return Patient(id=2, data=[10, 20, 30, 40, 50])
+
+def test_patient_data_mean(patient_1):
+    assert patient_1.data_mean() == 3.0
+
+def test_patient_data_max(patient_1):
+    assert patient_1.data_max() == 5
+
+def test_patient_data_min(patient_1):
+    assert patient_1.data_min() == 1
+
+def test_patient_attributes(patient_2):
+    assert patient_2.id == 2
+    assert patient_2.data == [10, 20, 30, 40, 50]
+~~~
+
+We could also encapsulate our tests in a class as well as using fixtures if we wished in order to keep them organised. In this case, the fixtures are available to be used within any classes we create in the file:
+
+~~~python
+import pytest
+from inflammation.models_oo import Patient
+
+@pytest.fixture()
+def patient_1():
+    return Patient(id=1, data=[1, 2, 3, 4, 5])
+
+@pytest.fixture()
+def patient_2():
+    return Patient(id=2, data=[10, 20, 30, 40, 50])
+
+class TestPatient:
+    
+    def test_patient_data_mean(self, patient_1):
+        assert patient_1.data_mean() == 3.0
+
+    def test_patient_data_max(self, patient_1):
+        assert patient_1.data_max() == 5
+
+    def test_patient_data_min(self, patient_1):
+        assert patient_1.data_min() == 1
+
+    def test_patient_attributes(self, patient_2):
+        assert patient_2.id == 2
+        assert patient_2.data == [10, 20, 30, 40, 50]
+~~~
+
+By default, fixtures will be created when first requested by a test and will be destroyed at the end of the test. We can change this behaviour by defining the *scope* of the fixture. If we want to use the decorator `@pytest.fixture(scope="session")` for example, the fixture will only be destroyed at the end of the entire test session. Modifying this behaviour is especially useful if the fixture is expensive to create (such as a large file) and we do not need to recreate it for each test.
+
+:::
+
+Next we can adapt our tests from the previous lesson that test the analysis functions that are now methods in the `Trial` class. 
+
+::::challenge{id=test-trial title="Testing the `Trial` class."}
+
+ Write some tests for the `Trial` class and the associated methods. You can adapt the tests that you wrote in your `test_models.py` file from the previous lesson. You can use fixtures to help with creating instances of the class for testing. 
+
+:::solution
+
+Here is the solution for the first three of the tests, the others should have been refactored in a similar fashion.
+
+~~~python
+@pytest.fixture()
+def trial_instance():
+    return Trial("test_data.csv", 1)
+
+
+class TestTrial:
+    def test_daily_mean_zeros(self, trial_instance):
+        """Test that mean function works for an array of zeros."""
+        trial_instance.data = np.array([[0, 0],
+                            [0, 0],
+                            [0, 0]])
+        test_result = np.array([0, 0])
+
+        # Need to use Numpy testing functions to compare arrays
+        npt.assert_array_equal(trial_instance.daily_mean(), test_result)
+
+
+    def test_daily_mean_integers(self, trial_instance):
+        """Test that mean function works for an array of positive integers."""
+
+        trial_instance.data = np.array([[1, 2],
+                            [3, 4],
+                            [5, 6]])
+        test_result = np.array([3, 4])
+
+        # Need to use Numpy testing functions to compare arrays
+        npt.assert_array_equal(trial_instance.daily_mean(), test_result)
+
+
+    @pytest.mark.parametrize(
+        "test, expected",
+        [
+            ([ [0, 0, 0], [0, 0, 0], [0, 0, 0] ], [0, 0, 0]),
+            ([ [4, 2, 5], [1, 6, 2], [4, 1, 9] ], [4, 6, 9]),
+            ([ [4, -2, 5], [1, -6, 2], [-4, -1, 9] ], [4, -1, 9]),
+        ])
+    def test_daily_max(self, test, expected, trial_instance):
+        """Test max function works for zeroes, positive integers, mix of positive/negative integers."""
+        trial_instance.data = np.array(test)
+        npt.assert_array_equal(trial_instance.daily_max(), np.array(expected))
+
+    ...
+~~~
+
+:::
+::::
+
+In our tests for the `Trial` class, we have to initialise the class using a CSV file in order to create an instance, even if we do not use the data in our tests.  How can we simplify this? One thing that can be changed is the `__init__` method, if we just needed the data as an argument, rather than the path to a CSV file, that would make testing easier. After this change, a separate method is going to be needed to allow creating a `Trial` from a CSV filepath, this can be achieved using a class method. Here is the first section of our adjusted object code:
+
+~~~python
+class Trial:
+    def __init__(self, data, id):
+        self.data = data
+        self.id = id
+
+    @classmethod
+    def from_csv(cls, filename, id):
+        data = cls.load_csv(filename)
+        return cls(data, id)
+
+    @staticmethod
+    def load_csv(filename):
+        """Load a Numpy array from a CSV
+
+        :param filename: Filename of CSV to load
+        """
+        return np.loadtxt(fname=filename, delimiter=',')
+
+    ...
+~~~
+
+Now, a `Trial` object can be instantiated in two ways:
+
+~~~python
+import numpy as np
+from inflammation.models import Trial
+
+filename = "inflammation-01.csv"
+data = np.loadtxt(fname=filename, delimiter=',')
+
+trial_group_01 = Trial(data, "Group01")
+trial_group_02 = Trial.from_csv("inflammation-02.csv", "Group02")
+~~~
+
+For our tests, we no longer need a CSV file in order to ensure that the statistical methods from the class give the expected results and we can replace our `trial_instance` fixture:
+
+~~~python
+@pytest.fixture()
+def trial_instance():
+    return Trial(np.array([[0, 0],[0, 0]]), 1)
+~~~
+
+Alternatively, we can create objects within test methods, if we prefer to do things that way:
+
+~~~python
+class TestTrial:
+    def test_daily_mean_zeros(self):
+        """Test that mean function works for an array of zeros."""
+        trial_instance = Trial(np.array([[0, 0],[0, 0],[0, 0]]), "Test")
+        test_result = np.array([0, 0])
+
+        # Need to use Numpy testing functions to compare arrays
+        npt.assert_array_equal(trial_instance.daily_mean(), test_result)
+
+    ...
+~~~
 
 ### Using a database rather than CSV files
 
-In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. It is going to be difficult to test this function without connecting to the `example.db` database. The contents of our file, named `sqlite_example.py` are shown here:
+Our alteration to the `Trial` class to make it easier to test, have also paved the way to adding more class methods that allow objects to be created from alternative data sources, such as a database. in order to achieve this though, we are going to need to create a function to query a database and return some data from it. Since we are writing new functions, we are also going to need to test them! We will now focus on ensuring this database functionality is tested before returning to our inflammation study to incorporate it.
+
+In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. In a similar fashion to the CSV file needed for a `Trial` object, it is going to be difficult to test this function without connecting to the `example.db` database. The contents of our file, named `sqlite_example.py` are shown here:
 
 ~~~python
 # Original code: Function that performs a database query
@@ -267,7 +462,7 @@ def query_database(sql, connection=None):
     return result
 ~~~
 
-Here is an example of some tests for these functions, these can be created in a new file named `test_sqlite.py` within a `/tests` directory. If you would like to learn more about the Structured Query Language (SQL) expressions in this example that are used to interact with the database see the [SQL Zoo](https://sqlzoo.net/wiki/SQL_Tutorial) site:
+Here is an example of some tests for these functions, these can be created in a new file named `test_sqlite.py` within the `/tests` directory. If you would like to learn more about the Structured Query Language (SQL) expressions in this example that are used to interact with the database see the [SQL Zoo](https://sqlzoo.net/wiki/SQL_Tutorial) site:
 
 ~~~python
 import pytest
@@ -333,13 +528,9 @@ def test_query_database_without_connection():
 
 As you can see, we can test the `connect_to_database` and `query_database` functions separately. The tests are becoming complex, however, especially the one for `query_database`. Next we can look at how fixtures can help us to reduce this complexity, especially when we want to reuse resources such as a test database.
 
-## Fixtures
+### More about Fixtures
 
-When writing your tests, you will often find that different tests benefit from the same or similar setup of objects, variables or even connections to allow creation of certain scenarios. After testing, there may also be *teardown* functions or procedures that need to be run in order to clean up files that have be generated or to close database connections that have been opened. This is where fixtures come to the rescue. 
-
-Fixtures are created by using the `@pytest.fixture` decorator on a function which allows this function to be passed as an argument to your tests and used within them. If there is a cleanup part to the code, then the fixture function should be written using the `yield` statement rather than a `return` statement. Anything up to the `yield` statement is setup code, and anything after the statement will be run post-testing in order to clean up.
-
-In the example below, we can use a fixture named `setup_database` to create our test database, add data and also remove the database file once the tests have finished running. As a result, our `test_query_database` function can be simplified and if we want to use the test database in an other tests, we simply need to add `setup_database` as an argument to those tests.
+In the example below, we can use a fixture named `setup_database` to create our test database, add data and also remove the database file once the tests have finished running. As a result, our `test_query_database` function can be simplified and if we want to use the test database in other tests, we simply need to add `setup_database` as an argument to those tests.
 
 ~~~python
 import pytest
@@ -440,7 +631,7 @@ def test_query_database(setup_database):
 :::
 ::::
 
-By default, fixtures will be created when first requested by a test and will be destroyed at the end of the test. We can change this behaviour by defining the *scope* of the fixture. If we want to use the decorator `@pytest.fixture(scope="session")` for example, the fixture will only be destroyed at the end of the entire test session. Modifying this behaviour is especially useful if the fixture is expensive to create (such as a large file) and we do not need to recreate it for each test. 
+
 
 As well as writing our own fixtures, we can use those that are [predefined/(built-in)](https://docs.pytest.org/en/latest/reference/fixtures.html). For example we may want to use a temporary directory for our files during testing, rather than creating files in the directory that we are working from (this is what currently happens when we run our database tests). The built-in fixture `temp_path_factory` allows us to to do this. We can refactor our code to add an extra fixture that uses feature and then it can be used by all the tests that we have written as well as by the `setup_database` fixture. The contents of our `test_sqlite.py` is now:
 
@@ -526,7 +717,7 @@ def test_query_database_without_connection():
 
 ~~~
 
-Congratulations, you now know about fixtures. For more details on what you can do please refer to the [pytest fixtures documentation](https://docs.pytest.org/en/7.1.x/how-to/fixtures.html).
+For more details on what you can do with fixtures, please refer to the [pytest fixtures documentation](https://docs.pytest.org/en/7.1.x/how-to/fixtures.html).
 
 ## Mocking
 
