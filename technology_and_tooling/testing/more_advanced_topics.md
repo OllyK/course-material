@@ -421,9 +421,9 @@ class TestTrial:
 
 ### Using a database rather than CSV files
 
-Our alteration to the `Trial` class to make it easier to test, have also paved the way to adding more class methods that allow objects to be created from alternative data sources, such as a database. in order to achieve this though, we are going to need to create a function to query a database and return some data from it. Since we are writing new functions, we are also going to need to test them! We will now focus on ensuring this database functionality is tested before returning to our inflammation study to incorporate it.
+Our alterations to the `Trial` class to make it easier to test have also paved the way to easily adding more methods that allow objects to be created from alternative data sources, such as a database. In order to achieve this, we are going to need to create separate functionality to query a database and return some data from it. Since we are writing new functions, we are also going to need to test them! We will now focus on ensuring this database functionality is tested before returning to our inflammation study to incorporate it.
 
-In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. In a similar fashion to the CSV file needed for a `Trial` object, it is going to be difficult to test this function without connecting to the `example.db` database. The contents of our file, named `sqlite_example.py` are shown here:
+In the following example, we have a function `query_database` that utilises a connection to a [SQLite](https://www.sqlite.org/) database. In a similar fashion to how a CSV file was needed for a `Trial` object, this function is going to be difficult to test without connecting to the `example.db` database. The contents of our file, named `sqlite_example.py` are shown here:
 
 ~~~python
 # Original code: Function that performs a database query
@@ -443,7 +443,7 @@ def query_database(sql):
 
 ~~~
 
-If we refactor the function to inject the database connection dependency, we can easily replace that connection during testing with one that is connected to a test database. Alternatively we could replace it with a fake (*mocked*) object that represents the connection, meaning that we do not have to connect to an actual database at all in order to test the function. Information on mocking will be given later in this lesson.
+If we refactor the function to inject the database connection dependency, we can easily replace that connection during testing with one that is connected to a test database. This also means we can test the two distinct tasks, connecting to the database and querying the database, separately. Additionally, we have the option to replace the connection with a fake (*mocked*) object, meaning that we do not have to connect to an actual database at all in order to test the function. Information on mocking will be given later in this lesson.
 
 ~~~python
 # Rewritten code: Performs a database query with dependency injection
@@ -1027,3 +1027,54 @@ def test_query_db_mocked_connection_mocker(mocker):
 ~~~
 
 Well done for making it this far, mocking is often a confusing subject due to the many ways in which it can be done and the abstract nature of temporarily replacing parts of the thing you are testing.  After this introduction, you can now solidify your learning by practicing the techniques here on your own code whilst using the documentation as a reference.
+
+## Putting it all together - adding a database as a data source
+
+Finally, we can come back to our `Trial` object and integrate the functions to connect to and query an SQLite database. We have provided a file `inflammation_data.db` that contains all of the data from the 12 csv files in one table called `data`. The table has 43 columns, `patient_id`, `trial_id`, `filename` and `day01` to `day40` that record the number of inflammation flare-ups for these days. The `patient_id` field is in the form of `pxx` where patient 1 is `p01`, for `trial_id` the format is `txx` where trial 1 is `t01`. Now we can add a new method `from_database` to our class:
+
+~~~python
+import numpy as np
+from sqlite_example import connect_to_database, query_database
+
+class Trial:
+    def __init__(self, data, id):
+        self.data = data
+        self.id = id
+
+    @classmethod
+    def from_csv(cls, filename, id):
+        data = cls.load_csv(filename)
+        return cls(data, id)
+    
+    @classmethod
+    def from_database(cls, db_filepath, trial_id):
+        query = f'SELECT * FROM data WHERE trial_id = "{trial_id}"'
+        connection = connect_to_database(db_filepath)
+        data = query_database(query, connection)
+        # Convert the list of tuples to a numpy array and skip the first three columns
+        data = np.array(data)[:, 3:].astype(float)
+        return cls(data, id)
+
+    @staticmethod
+    def load_csv(filename):
+        """Load a Numpy array from a CSV
+
+        :param filename: Filename of CSV to load
+        """
+        return np.loadtxt(fname=filename, delimiter=',')
+
+    ...
+~~~
+
+Using our new method, an instance of the `Trial` class can now be created in the following way:
+
+~~~python
+from inflammation.models import Trial
+
+trial_group01 = Trial.from_database("inflammation_data.db", "t01")
+~~~
+
+Our existing tests for the statistical methods from the `Trial` object do not need to change even if the underlying data storage has changed, as long as the data is loaded into a numpy array of the same format as we had previously.
+
+Challenge: Write some tests to ensure its loaded in the same format
+
