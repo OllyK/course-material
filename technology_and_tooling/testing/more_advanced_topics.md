@@ -1046,7 +1046,23 @@ Well done for making it this far, mocking is often a confusing subject due to th
 
 ## Putting it all together - adding a database as a data source
 
-Finally, we can come back to our `Trial` object and integrate the functions to connect to and query an SQLite database. We have provided a file `inflammation_data.db` that contains all of the data from the 12 csv files in one table called `data`. The table has 43 columns, `patient_id`, `trial_id`, `filename` and `day01` to `day40` that record the number of inflammation flare-ups for these days. The `patient_id` field is in the form of `pxx` where patient 1 is `p01`, for `trial_id` the format is `txx` where trial 1 is `t01`. Now we can add a new method `from_database` to our class:
+Finally, we can come back to our `Trial` object and integrate the functions to connect to and query an SQLite database. We have provided a file `inflammation_data.db` that contains all of the data from the 12 csv files in one table called `data`. 
+
+To get this file, if on WSL or Linux (e.g. Ubuntu or the Ubuntu VM), then do:
+
+~~~bash
+$ wget https://train.oxrse.uk/material/HPCu/software_architecture_and_design/procedural/inflammation/inflammation_data.db
+~~~
+
+Or, if on a Mac, do:
+
+~~~bash
+$ curl -O https://train.oxrse.uk/material/HPCu/software_architecture_and_design/procedural/inflammation/inflammation_data.db
+~~~
+
+Save the file into the `inflammation/data` directory of your project. 
+
+The `data` table has 43 columns, `patient_id`, `trial_id`, `filename` and `day01` to `day40` that record the number of inflammation flare-ups for these days. The `patient_id` field is in the form of `pxx` where patient 1 is `p01`, for `trial_id` the format is `txx` where trial 1 is `t01`. Now we can add a new method `from_database` to our class:
 
 ~~~python
 import numpy as np
