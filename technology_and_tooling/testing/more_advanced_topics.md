@@ -367,8 +367,18 @@ class Trial:
         self.data = data
         self.id = id
 
-    @classmethod
+   @classmethod
     def from_csv(cls, filename, id):
+        """
+        Class method to create a Trial instance from data in a CSV file.
+
+        Parameters:
+        filename (str): The file path of the CSV file to read.
+        id (str): The id to assign to the Trial instance.
+
+        Returns:
+        Trial: A Trial instance with the data and id from the CSV file.
+        """
         data = cls.load_csv(filename)
         return cls(data, id)
 
@@ -547,8 +557,10 @@ def setup_database():
     cur = conn.cursor()
     cur.execute("CREATE TABLE Animals(Name, Species, Age)")
     cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
+    conn.commit()
     yield conn  # Provide the fixture value
     # Teardown database connection
+    cur.execute("DROP TABLE Animals")
     conn.close()
     Path.unlink("test.db")
 
@@ -611,7 +623,9 @@ def setup_database(database_connection):
     cur = conn.cursor()
     cur.execute("CREATE TABLE Animals(Name, Species, Age)")
     cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
-    yield conn 
+    conn.commit()
+    yield conn
+    cur.execute("DROP TABLE Animals")
 
 def test_query_database(setup_database):
     """
@@ -668,7 +682,9 @@ def setup_database(database_connection):
     cur = conn.cursor()
     cur.execute("CREATE TABLE Animals(Name, Species, Age)")
     cur.execute("INSERT INTO Animals VALUES ('Bugs', 'Rabbit', 6)")
-    yield conn 
+    conn.commit()
+    yield conn
+    cur.execute("DROP TABLE Animals")
 
 def test_connect_to_db_type(database_fn_fixture):
     """
@@ -1043,17 +1059,42 @@ class Trial:
 
     @classmethod
     def from_csv(cls, filename, id):
+        """
+        Class method to create a Trial instance from data in a CSV file.
+
+        Parameters:
+        filename (str): The file path of the CSV file to read.
+        id (str): The id to assign to the Trial instance.
+
+        Returns:
+        Trial: A Trial instance with the data and id from the CSV file.
+        """
         data = cls.load_csv(filename)
         return cls(data, id)
     
     @classmethod
     def from_database(cls, db_filepath, trial_id):
+        """
+        Class method to create a Trial instance from data in a SQLite database.
+
+        Parameters:
+        db_filepath (str): The file path of the SQLite database to connect to.
+        trial_id (str): The trial_id to query the database for.
+
+        Returns:
+        Trial: A Trial instance with the data and id from the database.
+        """
         query = f'SELECT * FROM data WHERE trial_id = "{trial_id}"'
         connection = connect_to_database(db_filepath)
         data = query_database(query, connection)
-        # Convert the list of tuples to a numpy array and skip the first three columns
-        data = np.array(data)[:, 3:].astype(float)
-        return cls(data, id)
+        if not data:
+            raise ValueError("No data found for trial_id")
+        # Convert the list of tuples to a numpy array and skip the first two columns
+        if np.shape(data)[0] == 1:  # If only one row is returned, convert to 2D array
+            data = np.array([data[0][3:]]).astype(float)
+        else:
+            data = np.array(data)[:, 3:].astype(float)
+        return cls(data, trial_id)
 
     @staticmethod
     def load_csv(filename):
@@ -1074,7 +1115,105 @@ from inflammation.models import Trial
 trial_group01 = Trial.from_database("inflammation_data.db", "t01")
 ~~~
 
-Our existing tests for the statistical methods from the `Trial` object do not need to change even if the underlying data storage has changed, as long as the data is loaded into a numpy array of the same format as we had previously.
+Our existing tests for the statistical methods from the `Trial` object do not need to be altered even if the underlying data storage has changed, as long as the data is loaded into a numpy array of the same format as we had previously.
 
-Challenge: Write some tests to ensure its loaded in the same format
+::::challenge{id=test_db_load title="Testing loading from a database."}
 
+Write some more tests for the `Trial` class. These should check that the data loaded via the `from_database` class method is stored in the `data` attribute in the same format as when using either the `from_csv` class method or when using the normal constructor (`Trial(data, id)`). Feel free to use mocking and/or fixtures as appropriate.
+
+:::solution
+Here we give some example tests using the `mocker` fixture from `pytest-mock` as well as a real test database. Your tests do not need to be identical to these ones. At this stage, you should know that testing the functionality can be done in in a number of ways!
+
+~~~python
+import numpy as np
+import pytest
+from inflammation.models import Trial
+from sql_example import connect_to_database, query_database
+
+@pytest.fixture(scope="session")
+def database_fn_fixture(tmp_path_factory):
+    """
+    Uses tmp_path_factory to create a filename in a temp directory
+    """
+    yield tmp_path_factory.mktemp("data") / "test.db"
+
+@pytest.fixture(scope="session")
+def database_connection(database_fn_fixture):
+    """
+    Create database connection
+    """
+    conn = sqlite3.connect(database_fn_fixture)
+    yield conn
+    conn.close()
+    Path.unlink(database_fn_fixture)
+
+@pytest.fixture(scope="session")
+def setup_database(database_connection):
+    """
+    Populate data in database
+    """
+    conn = database_connection
+    cur = conn.cursor()
+    cur.execute('''
+        CREATE TABLE data (
+            patient_id TEXT,
+            trial_id TEXT,
+            filename TEXT,
+            value1 INTEGER,
+            value2 INTEGER
+        )
+    ''')
+    cur.execute('''
+        INSERT INTO data VALUES
+        ('p01', 't02', 'filename3', 4, 5),
+        ('p05', 't02', 'filename3', 2, 1),
+        ('p05', 't03', 'filename4', 3, 2)
+    ''')
+    conn.commit()
+    yield conn 
+    cur.execute("DROP TABLE data")
+
+def test_trial_from_database(database_fn_fixture, setup_database):
+    # Create a Trial object
+    trial = Trial.from_database(database_fn_fixture, "t02")
+    assert isinstance(trial.data, np.ndarray)
+    # Check that the data attribute is correct (the first three columns should be skipped)
+    npt.assert_array_equal(trial.data, np.array([[4, 5], [2, 1]]))
+    assert trial.id == "t02"
+
+def test_trial_from_database_no_data(database_fn_fixture, setup_database):
+    # Try to create a Trial object with a trial_id that doesn't exist in the database
+    with pytest.raises(ValueError, match='No data found for trial_id'):
+        Trial.from_database(database_fn_fixture, 't01')
+
+def test_trial_from_database_one_row(database_fn_fixture, setup_database):
+    # Try to create a Trial object with a trial_id that only has one row in the database
+    trial = Trial.from_database(database_fn_fixture, 't03')
+    assert isinstance(trial.data, np.ndarray)
+    # Check that the data attribute is correct (the first three columns should be skipped)
+    np.testing.assert_array_equal(trial.data, np.array([[3., 2.]]))
+    assert trial.id == 't03'
+
+def test_trial_from_mock_database(mocker):
+    # Create a mock sqlite3.Connection object
+    mock_conn = mocker.Mock(spec=sqlite3.Connection)
+    # Create a mock sqlite3.Cursor object
+    mock_cursor = mocker.Mock(spec=sqlite3.Cursor)
+    mock_cursor.fetchall.return_value = [('p01', 't02', 'filename3', 4, 5),
+                                         ('p05', 't02', 'filename3', 2, 1)]
+    mock_conn.cursor.return_value = mock_cursor
+    # Replace the sqlite3.connect function with a mock
+    mocker.patch('sqlite3.connect', return_value=mock_conn)
+    # Create a Trial object
+    trial = Trial.from_database('test_db.db', 1)
+    assert isinstance(trial.data, np.ndarray)
+    # Check that the data attribute is correct (the first three columns should be skipped)
+    npt.assert_array_equal(trial.data, np.array([[4, 5], [2, 1]]))
+    assert trial.id == 1
+
+~~~
+
+:::
+::::
+
+We have now covered a number of topics, designing testable code, using fixtures and mocking. These should help you to ensure you write reliable and maintainable software. Happy testing!
