@@ -9,7 +9,7 @@ files: [
   automated_testing.md,
   diagnosing_issues.md,
   scaling_up.md,
-  more_advanced_topics.md
+  testable_code_fixtures.md
 ]
 attribution: 
     - citation: >
